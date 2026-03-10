@@ -229,8 +229,8 @@ class AiriScheduler:
                     if time_remaining > 0 and time_remaining % 10 == 0:
                         self._emit("ore_ai_log", f"[{datetime.now().strftime('%H:%M:%S')}] R#{self.last_round_id} | {time_remaining}s remaining")
                     
-                    # Deploy when 10-15 seconds remaining (late deploy strategy)
-                    if 5 <= time_remaining <= 15:
+                    # Deploy when 20-30 seconds remaining (late deploy strategy)
+                    if 20 <= time_remaining <= 30:
                         # Pick least crowded squares
                         blocks_to_play = select_best_blocks(self.current_round, self.num_blocks_to_play)
                         
