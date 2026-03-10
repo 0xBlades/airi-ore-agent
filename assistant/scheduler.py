@@ -236,8 +236,23 @@ class AiriScheduler:
                         
                         self._emit("ore_ai_log", f"🚀 Deploying {self.bet_amount_sol} SOL → squares {blocks_to_play}")
                         
+                        # Check if miner needs to checkpoint a previous round
+                        miner_round_id = self.user_rewards.get("roundId", 0)
+                        checkpoint_id = self.user_rewards.get("checkpointId", 0)
+                        needs_checkpoint = False
+                        
+                        if miner_round_id > 0 and checkpoint_id != miner_round_id:
+                            if miner_round_id != int(self.last_round_id):
+                                needs_checkpoint = True
+                        
                         # Execute on-chain
-                        tx_hash = self.web3.deploy(blocks_to_play, self.bet_amount_sol, int(self.last_round_id))
+                        tx_hash = self.web3.deploy(
+                            block_ids=blocks_to_play, 
+                            total_sol_bet=self.bet_amount_sol, 
+                            round_id=int(self.last_round_id),
+                            needs_checkpoint=needs_checkpoint,
+                            miner_round_id=miner_round_id
+                        )
                         
                         if tx_hash:
                             self._emit("ore_ai_log", f"✅ TX: {tx_hash[:16]}...")

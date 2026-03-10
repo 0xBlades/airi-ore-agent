@@ -173,6 +173,7 @@ def parse_miner(data: bytes) -> dict:
         "pendingSOLFormatted": f"{rewards_sol / 1e9:.6f}",
         "pendingOREFormatted": f"{(rewards_ore + refined_ore) / 1e11:.6f}",  # ORE has 11 decimals
         "roundId": round_id,
+        "checkpointId": checkpoint_id,
         "lifetimeRewardsSOL": lifetime_rewards_sol,
         "lifetimeRewardsORE": lifetime_rewards_ore,
         "lifetimeDeployed": lifetime_deployed,

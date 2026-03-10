@@ -31,6 +31,7 @@ BOARD_SEED      = b"board"
 CONFIG_SEED     = b"config"
 MINER_SEED      = b"miner"
 ROUND_SEED      = b"round"
+TREASURY_SEED   = b"treasury"
 
 # Instruction discriminators (from ore/api/src/instruction.rs OreInstruction enum)
 IX_DEPLOY    = 6
@@ -82,6 +83,9 @@ class OreSolana:
     def _get_round_pda(self, round_id: int) -> Pubkey:
         return self._find_pda([ROUND_SEED, struct.pack("<Q", round_id)])
 
+    def _get_treasury_pda(self) -> Pubkey:
+        return self._find_pda([TREASURY_SEED])
+
     # ── Balance Queries ─────────────────────────────────────────────
     def get_sol_balance(self) -> float:
         if not self.wallet_addr:
@@ -113,6 +117,26 @@ class OreSolana:
         return 0.0
 
     # ── Instruction Builders ────────────────────────────────────────
+    def _build_checkpoint_ix(self, miner_round_id: int) -> Instruction:
+        """
+        Build the Checkpoint instruction.
+        Data: u8 discriminator = 2
+        Accounts: signer, board, miner, round (previous), treasury, system_program
+        """
+        authority = self.keypair.pubkey()
+        data = struct.pack("<B", IX_CHECKPOINT)
+
+        accounts = [
+            AccountMeta(authority, is_signer=True, is_writable=True),
+            AccountMeta(self._get_board_pda(), is_signer=False, is_writable=True),
+            AccountMeta(self._get_miner_pda(authority), is_signer=False, is_writable=True),
+            AccountMeta(self._get_round_pda(miner_round_id), is_signer=False, is_writable=True),
+            AccountMeta(self._get_treasury_pda(), is_signer=False, is_writable=True),
+            AccountMeta(SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
+        ]
+
+        return Instruction(ORE_PROGRAM_ID, data, accounts)
+
     def _build_deploy_ix(self, amount_lamports: int, block_ids: list[int], round_id: int) -> Instruction:
         """
         Build the Deploy instruction for the Ore v3 program.
@@ -236,7 +260,7 @@ class OreSolana:
             return ""
 
     # ── Public Interface ────────────────────────────────────────────
-    def deploy(self, block_ids: list, total_sol_bet: float, round_id: int) -> str:
+    def deploy(self, block_ids: list, total_sol_bet: float, round_id: int, needs_checkpoint: bool = False, miner_round_id: int = 0) -> str:
         """Deploy SOL to the Ore Grid."""
         if not self.keypair:
             print("[OreSolana] Cannot deploy: Wallet not initialized.")
@@ -252,8 +276,15 @@ class OreSolana:
 
         print(f"[OreSolana] Deploying {total_sol_bet} SOL ({amount_per_square} lamports/square) to {num_blocks} blocks: {block_ids}")
 
+        ixs = []
+        if needs_checkpoint:
+            print(f"[OreSolana] Prepending Checkpoint instruction for prior round ID: {miner_round_id}")
+            ixs.append(self._build_checkpoint_ix(miner_round_id))
+
         ix = self._build_deploy_ix(amount_per_square, block_ids, round_id)
-        return self._send_tx([ix])
+        ixs.append(ix)
+
+        return self._send_tx(ixs)
 
     def claim_sol(self) -> str:
         """Claim pending SOL rewards."""
