@@ -7,3 +7,4 @@ sseclient-py>=1.8.0
 solana>=0.33.0
 solders>=0.21.0
 base58>=2.1.1
+pyTelegramBotAPI>=4.15.0
