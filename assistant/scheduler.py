@@ -26,12 +26,13 @@ class AiriScheduler:
         rpc_url = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
         priv_key = os.getenv("PRIVATE_KEY", "")
         self.api = OreAPI(sse_callback=self._handle_sse)
+        self.api.set_rpc(rpc_url)  # Share the RPC URL for on-chain reads
         self.web3 = OreSolana(rpc_url, priv_key)
         
         # State
         self.wallet_addr = self.web3.wallet_addr
         self.global_stats = {}
-        self.bean_price = {}
+        self.ore_price = {}
         self.current_round = {}
         self.user_rewards = {}
         
@@ -51,7 +52,7 @@ class AiriScheduler:
         self.mining_active = True
         
         # Auto-claim config
-        self.auto_claim_sol_threshold = 0.0005  # Claim automatically if pending SOL >= 0.0005
+        self.auto_claim_sol_threshold = 0.002  # Claim automatically if pending SOL >= 0.002
 
     def _emit(self, event_type: str, data):
         """Emit an event to the UI callback."""
@@ -171,7 +172,7 @@ class AiriScheduler:
         # Initial data fetch
         stats_price = self.api.get_stats_and_price()
         self.global_stats = stats_price.get("stats", {})
-        self.bean_price = stats_price.get("price", {})
+        self.ore_price = stats_price.get("price", {})
         
         self.current_round = self.api.get_current_round(self.wallet_addr)
         self.last_round_id = self.current_round.get("roundId", "")
@@ -194,7 +195,7 @@ class AiriScheduler:
                 sp = self.api.get_stats_and_price()
                 if sp:
                     self.global_stats = sp.get("stats", {})
-                    self.bean_price = sp.get("price", {})
+                    self.ore_price = sp.get("price", {})
 
             # Re-fetch wallet balance + rewards every 30 seconds
             if now_ts - last_wallet_refresh >= 30:
@@ -236,7 +237,7 @@ class AiriScheduler:
                         self._emit("ore_ai_log", f"🚀 Deploying {self.bet_amount_sol} SOL → squares {blocks_to_play}")
                         
                         # Execute on-chain
-                        tx_hash = self.web3.deploy(blocks_to_play, self.bet_amount_sol)
+                        tx_hash = self.web3.deploy(blocks_to_play, self.bet_amount_sol, int(self.last_round_id))
                         
                         if tx_hash:
                             self._emit("ore_ai_log", f"✅ TX: {tx_hash[:16]}...")

@@ -79,8 +79,8 @@ class OreSolana:
     def _get_miner_pda(self, authority: Pubkey) -> Pubkey:
         return self._find_pda([MINER_SEED, bytes(authority)])
 
-    def _get_round_pda(self) -> Pubkey:
-        return self._find_pda([ROUND_SEED])
+    def _get_round_pda(self, round_id: int) -> Pubkey:
+        return self._find_pda([ROUND_SEED, struct.pack("<Q", round_id)])
 
     # ── Balance Queries ─────────────────────────────────────────────
     def get_sol_balance(self) -> float:
@@ -113,7 +113,7 @@ class OreSolana:
         return 0.0
 
     # ── Instruction Builders ────────────────────────────────────────
-    def _build_deploy_ix(self, amount_lamports: int, block_ids: list[int]) -> Instruction:
+    def _build_deploy_ix(self, amount_lamports: int, block_ids: list[int], round_id: int) -> Instruction:
         """
         Build the Deploy instruction for the Ore v3 program.
         
@@ -151,7 +151,7 @@ class OreSolana:
             AccountMeta(self._get_board_pda(), is_signer=False, is_writable=True),               # board
             AccountMeta(self._get_config_pda(), is_signer=False, is_writable=False),             # config
             AccountMeta(self._get_miner_pda(authority), is_signer=False, is_writable=True),      # miner
-            AccountMeta(self._get_round_pda(), is_signer=False, is_writable=True),               # round
+            AccountMeta(self._get_round_pda(round_id), is_signer=False, is_writable=True),               # round
             AccountMeta(SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),                  # system_program
             AccountMeta(ORE_PROGRAM_ID, is_signer=False, is_writable=False),                     # ore_program
         ]
@@ -233,7 +233,7 @@ class OreSolana:
             return ""
 
     # ── Public Interface ────────────────────────────────────────────
-    def deploy(self, block_ids: list, total_sol_bet: float) -> str:
+    def deploy(self, block_ids: list, total_sol_bet: float, round_id: int) -> str:
         """Deploy SOL to the Ore Grid."""
         if not self.keypair:
             print("[OreSolana] Cannot deploy: Wallet not initialized.")
@@ -249,7 +249,7 @@ class OreSolana:
 
         print(f"[OreSolana] Deploying {total_sol_bet} SOL ({amount_per_square} lamports/square) to {num_blocks} blocks: {block_ids}")
 
-        ix = self._build_deploy_ix(amount_per_square, block_ids)
+        ix = self._build_deploy_ix(amount_per_square, block_ids, round_id)
         return self._send_tx([ix])
 
     def claim_sol(self) -> str:
