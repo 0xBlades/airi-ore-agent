@@ -154,6 +154,9 @@ class OreSolana:
             AccountMeta(self._get_round_pda(round_id), is_signer=False, is_writable=True),               # round
             AccountMeta(SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),                  # system_program
             AccountMeta(ORE_PROGRAM_ID, is_signer=False, is_writable=False),                     # ore_program
+            # Entropy Accounts required for random numbers
+            AccountMeta(Pubkey.from_string("BWCaDY96Xe4WkFq1M7UiCCRcChsJ3p51L5KrGzhxgm2E"), is_signer=False, is_writable=True), # var_info
+            AccountMeta(Pubkey.from_string("3jSkUuYBoJzQPMEzTvkDFXCZUBksPamrVhrnHR9igu2X"), is_signer=False, is_writable=False),# entropy_program
         ]
 
         return Instruction(ORE_PROGRAM_ID, data, accounts)
