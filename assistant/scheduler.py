@@ -12,6 +12,7 @@ from assistant.ore_api import OreAPI
 from assistant.ore_solana import OreSolana
 from assistant.strategy import calculate_ev, select_random_blocks
 from assistant.greeting import get_greeting
+from assistant.telegram_bot import TelegramAgent
 
 
 class AiriScheduler:
@@ -28,6 +29,11 @@ class AiriScheduler:
         self.api = OreAPI(sse_callback=self._handle_sse)
         self.api.set_rpc(rpc_url)  # Share the RPC URL for on-chain reads
         self.web3 = OreSolana(rpc_url, priv_key)
+        
+        # Telegram Bot Integration
+        tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        tg_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        self.telegram_bot = TelegramAgent(tg_token, tg_chat_id, self) if tg_token and tg_chat_id else None
         
         # State
         self.wallet_addr = self.web3.wallet_addr
@@ -136,6 +142,8 @@ class AiriScheduler:
                 
                 if beanpot_hit:
                     self._emit("ore_ai_log", f"🫘🎉 OREPOT HIT! Jackpot triggered!")
+                    if getattr(self, "telegram_bot", None) and we_won:
+                        self.telegram_bot.send_notification("🎉 *JACKPOT! Motherlode terpicu dan kita menang!*\nCek `/status` untuk melihat pending rewards.")
             else:
                 self._emit("ore_ai_log", f"⏩ R#{self.last_round_id} empty round (no deploys)")
             
@@ -281,6 +289,10 @@ class AiriScheduler:
         self._running = True
         self._thread = threading.Thread(target=self._agent_loop, daemon=True)
         self._thread.start()
+        
+        if getattr(self, "telegram_bot", None):
+            self.telegram_bot.start()
+            
         print("[Scheduler] Agent Started")
 
     def stop(self):
@@ -289,4 +301,8 @@ class AiriScheduler:
         self.api.stop_sse_stream()
         if self._thread:
             self._thread.join(timeout=5)
+            
+        if getattr(self, "telegram_bot", None):
+            self.telegram_bot.stop()
+            
         print("[Scheduler] Agent Stopped")
