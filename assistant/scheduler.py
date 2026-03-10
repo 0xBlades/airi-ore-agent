@@ -3,13 +3,14 @@ Airi Scheduler Module (Minebean Agent)
 Runs the background loop, manages API data, SSE events, and invokes Strategy -> Web3 Deploy.
 """
 
+import os
 import time
 import threading
 from datetime import datetime
 
-from assistant.minebean_api import MinebeanAPI
-from assistant.minebean_web3 import MinebeanWeb3
-from assistant.strategy import calculate_ev, select_best_blocks
+from assistant.ore_api import OreAPI
+from assistant.ore_solana import OreSolana
+from assistant.strategy import calculate_ev, select_random_blocks
 from assistant.greeting import get_greeting
 
 
@@ -21,14 +22,17 @@ class AiriScheduler:
         self._running = False
         self._thread = None
         
-        # Minebean modules
-        self.api = MinebeanAPI(sse_callback=self._handle_sse)
-        self.web3 = MinebeanWeb3()
+        # Ore modules
+        rpc_url = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
+        priv_key = os.getenv("PRIVATE_KEY", "")
+        self.api = OreAPI(sse_callback=self._handle_sse)
+        self.api.set_rpc(rpc_url)  # Share the RPC URL for on-chain reads
+        self.web3 = OreSolana(rpc_url, priv_key)
         
         # State
-        self.wallet_addr = self.web3.get_address()
+        self.wallet_addr = self.web3.wallet_addr
         self.global_stats = {}
-        self.bean_price = {}
+        self.ore_price = {}
         self.current_round = {}
         self.user_rewards = {}
         
@@ -36,19 +40,21 @@ class AiriScheduler:
 
         # Bot config
         self.num_blocks_to_play = 20
-        self.bet_per_block = 0.000005
-        self.bet_amount_eth = round(self.bet_per_block * self.num_blocks_to_play, 18)
+        self.bet_per_block = 0.0001
+        self.bet_amount_sol = self.bet_per_block * self.num_blocks_to_play
         
         # Win/Loss & P&L tracking
+        self.last_winning_block = -1
+        self.last_deployed_round_id = ""
         self.rounds_played = 0
         self.rounds_won = 0
-        self.total_eth_spent = 0.0
-        self.total_eth_won = 0.0
-        self.total_bean_earned = 0.0
+        self.total_sol_spent = 0.0
+        self.total_sol_won = 0.0
+        self.total_ore_earned = 0.0
         self.mining_active = True
         
         # Auto-claim config
-        self.auto_claim_eth_threshold = 0.0005  # Claim automatically if pending ETH >= 0.0005
+        self.auto_claim_sol_threshold = 0.002  # Claim automatically if pending SOL >= 0.002
 
     def _emit(self, event_type: str, data):
         """Emit an event to the UI callback."""
@@ -66,7 +72,7 @@ class AiriScheduler:
         if event_type == "deployed":
             # Grid updated by someone else
             self.current_round = payload
-            self._emit("minebean_grid_update", payload)
+            self._emit("ore_grid_update", payload)
             
         elif event_type == "roundTransition":
             # Round ended, new one started
@@ -79,6 +85,12 @@ class AiriScheduler:
                 winning_block_id = settled.get("winningBlock", "?")
                 winning_block = str(int(winning_block_id) + 1) if winning_block_id != "?" else "?"
                 
+                # Save the last winning block id for exclusion in the next round
+                if winning_block_id != "?":
+                    self.last_winning_block = int(winning_block_id)
+                else:
+                    self.last_winning_block = -1
+                
                 total_winnings = settled.get("totalWinnings", "0")
                 top_miner = settled.get("topMiner", "")
                 beanpot_hit = settled.get("beanpotAmount", "0") != "0"
@@ -89,75 +101,75 @@ class AiriScheduler:
                 
                 if we_played:
                     self.rounds_played += 1
-                    self.total_eth_spent += self.bet_amount_eth
+                    self.total_sol_spent += self.bet_amount_sol
                     
                     # Check if our address is among winners
                     we_won = self.wallet_addr.lower() == top_miner.lower() if top_miner else False
                     
                     if we_won:
                         self.rounds_won += 1
-                        # Track ETH winnings
+                        # Track SOL winnings (assuming Ore API returns lamports in totalWinnings)
                         try:
-                            win_eth = float(total_winnings) / 1e18
-                            self.total_eth_won += win_eth
+                            win_sol = float(total_winnings) / 1e9
+                            self.total_sol_won += win_sol
                         except:
                             pass
-                        self._emit("minebean_ai_log", f"🏆 R#{self.last_round_id} WIN! Block #{winning_block}")
+                        self._emit("ore_ai_log", f"🏆 R#{self.last_round_id} WIN! Block #{winning_block}")
                     else:
-                        self._emit("minebean_ai_log", f"💀 R#{self.last_round_id} LOSE | Block #{winning_block}")
+                        self._emit("ore_ai_log", f"💀 R#{self.last_round_id} LOSE | Block #{winning_block}")
                     
-                    # BEAN is earned every round you play (1 BEAN/round distributed)
-                    self.total_bean_earned += 1.0 / max(1, settled.get("totalMiners", 1))
+                    # ORE is earned every round you play
+                    self.total_ore_earned += 1.0 / max(1, settled.get("totalMiners", 1))
                     
                     # Emit round history stats
                     win_rate = (self.rounds_won / self.rounds_played * 100) if self.rounds_played > 0 else 0
-                    pnl = self.total_eth_won - self.total_eth_spent
-                    self._emit("minebean_winrate", {
+                    pnl = self.total_sol_won - self.total_sol_spent
+                    self._emit("ore_winrate", {
                         "played": self.rounds_played,
                         "won": self.rounds_won,
                         "rate": win_rate,
-                        "total_bean": self.total_bean_earned,
+                        "total_ore": self.total_ore_earned,
                         "total_pnl": pnl,
                     })
                 else:
-                    self._emit("minebean_ai_log", f"⏭️ R#{self.last_round_id} skipped | Winner: Block #{winning_block}")
+                    self._emit("ore_ai_log", f"⏭️ R#{self.last_round_id} skipped | Winner: Block #{winning_block}")
                 
                 if beanpot_hit:
-                    self._emit("minebean_ai_log", f"🫘🎉 BEANPOT HIT! Jackpot triggered!")
+                    self._emit("ore_ai_log", f"🫘🎉 OREPOT HIT! Jackpot triggered!")
             else:
-                self._emit("minebean_ai_log", f"⏩ R#{self.last_round_id} empty round (no deploys)")
+                self._emit("ore_ai_log", f"⏩ R#{self.last_round_id} empty round (no deploys)")
             
             print(f"[Agent] Round {self.last_round_id} ended. Winner block: {settled.get('winningBlock', '?')}")
             
             self.current_round = new_round
             self.last_round_id = new_round.get("roundId", "")
-            self._emit("minebean_round_start", new_round)
+            self._emit("ore_round_start", new_round)
             
             # Fetch updated wallet info/rewards when round ends
             self._fetch_user_data()
 
     def _fetch_user_data(self):
         """Fetch wallet balance and pending rewards."""
-        eth_bal = self.web3.get_eth_balance()
+        sol_bal = self.web3.get_sol_balance()
         if self.wallet_addr:
             rewards = self.api.get_user_rewards(self.wallet_addr)
             self.user_rewards = rewards
-            self._emit("minebean_wallet_update", {
+            self._emit("ore_wallet_update", {
                 "address": self.wallet_addr,
-                "eth_balance": eth_bal,
+                "sol_balance": sol_bal,
                 "rewards": rewards
             })
             
-            # Check for Auto-Claim ETH
-            pending_eth = float(rewards.get("pendingETHFormatted", "0"))
-            if pending_eth >= self.auto_claim_eth_threshold:
-                self._emit("minebean_ai_log", f"💰 Auto-Claiming {pending_eth:.4f} ETH...")
-                tx = self.web3.claim_eth()
+            # Check for Auto-Claim SOL
+            pending_sol = float(rewards.get("pendingSOLFormatted", "0"))
+            if pending_sol >= self.auto_claim_sol_threshold:
+                self._emit("ore_ai_log", f"💰 Auto-Claiming {pending_sol:.4f} SOL...")
+                tx = self.web3.claim_sol()
                 if tx:
-                    self._emit("minebean_ai_log", f"✅ Claimed ETH! TX: {tx[:16]}...")
-                    self.total_eth_spent = 0.0  # Reset session P&L logic if desired, or keep accumulating
+                    self._emit("ore_ai_log", f"✅ Claimed SOL! TX: {tx[:16]}...")
+                    self.total_sol_spent = 0.0  # Reset session P&L logic
         else:
-            self._emit("minebean_wallet_update", {"error": "No wallet loaded"})
+            self._emit("ore_wallet_update", {"error": "No wallet loaded"})
 
     def _agent_loop(self):
         """Main AI loop running continuously."""
@@ -168,7 +180,7 @@ class AiriScheduler:
         # Initial data fetch
         stats_price = self.api.get_stats_and_price()
         self.global_stats = stats_price.get("stats", {})
-        self.bean_price = stats_price.get("price", {})
+        self.ore_price = stats_price.get("price", {})
         
         self.current_round = self.api.get_current_round(self.wallet_addr)
         self.last_round_id = self.current_round.get("roundId", "")
@@ -191,7 +203,7 @@ class AiriScheduler:
                 sp = self.api.get_stats_and_price()
                 if sp:
                     self.global_stats = sp.get("stats", {})
-                    self.bean_price = sp.get("price", {})
+                    self.ore_price = sp.get("price", {})
 
             # Re-fetch wallet balance + rewards every 30 seconds
             if now_ts - last_wallet_refresh >= 30:
@@ -204,18 +216,19 @@ class AiriScheduler:
                 if fresh_round:
                     new_round_id = fresh_round.get("roundId", "")
                     if new_round_id != self.last_round_id:
-                        self._emit("minebean_ai_log", f"🔄 New round detected: R#{new_round_id}")
-                        self._emit("minebean_round_start", fresh_round)
+                        self._emit("ore_ai_log", f"🔄 New round detected: R#{new_round_id}")
+                        self._emit("ore_round_start", fresh_round)
                     self.current_round = fresh_round
                     self.last_round_id = new_round_id
                 last_round_refresh = now_ts
 
             # Deploy only if mining is active
             if self.current_round and self.wallet_addr and self.mining_active:
-                # Check if we already deployed this round
-                already_deployed = float(self.current_round.get("userDeployedFormatted", "0")) > 0
+                # Check if we already deployed this round (API level or Local state)
+                already_deployed_api = float(self.current_round.get("userDeployedFormatted", "0")) > 0
+                already_deployed_local = self.last_deployed_round_id == self.last_round_id
                 
-                if not already_deployed:
+                if not already_deployed_api and not already_deployed_local:
                     # Check timing: deploy near the end of the round (10-15s remaining)
                     end_time = self.current_round.get("endTime", 0)
                     now_ts = int(time.time())
@@ -223,39 +236,39 @@ class AiriScheduler:
                     
                     # Log status
                     if time_remaining > 0 and time_remaining % 10 == 0:
-                        self._emit("minebean_ai_log", f"[{datetime.now().strftime('%H:%M:%S')}] R#{self.last_round_id} | {time_remaining}s remaining")
+                        self._emit("ore_ai_log", f"[{datetime.now().strftime('%H:%M:%S')}] R#{self.last_round_id} | {time_remaining}s remaining")
                     
-                    # Deploy when 10-15 seconds remaining (late deploy strategy)
-                    if 5 <= time_remaining <= 15:
-                        # Extract the previous winning block from global stats
-                        prev_winner_block = -1
-                        try:
-                            stats = self.global_stats.get("stats", {})
-                            if stats:
-                                # The winningBlock string looks like "Block X (YY%)" or just "X"
-                                win_str = str(stats.get("winningBlock", ""))
-                                import re
-                                match = re.search(r'\d+', win_str)
-                                if match:
-                                    prev_winner_block = int(match.group()) - 1
-                        except Exception as e:
-                            pass
-                            
-                        # Pick 24 blocks (API returns 0-24, contract needs 0-24)
-                        blocks_to_play = select_best_blocks(self.current_round, self.num_blocks_to_play, prev_winner_block)
+                    # Deploy when 20-30 seconds remaining (late deploy strategy)
+                    if 20 <= time_remaining <= 30:
+                        # Pick random squares, excluding previous winner
+                        blocks_to_play = select_random_blocks(self.num_blocks_to_play, self.last_winning_block)
                         
-                        # Visually log 1-25 so the user doesn't panic
-                        visual_blocks = [b + 1 for b in blocks_to_play]
-                        self._emit("minebean_ai_log", f"🚀 Deploying {self.bet_amount_eth} ETH → blocks {visual_blocks}")
+                        self._emit("ore_ai_log", f"🚀 Deploying {self.bet_amount_sol} SOL → squares {blocks_to_play}")
+                        
+                        # Check if miner needs to checkpoint a previous round
+                        miner_round_id = self.user_rewards.get("roundId", 0)
+                        checkpoint_id = self.user_rewards.get("checkpointId", 0)
+                        needs_checkpoint = False
+                        
+                        if miner_round_id > 0 and checkpoint_id != miner_round_id:
+                            if miner_round_id != int(self.last_round_id):
+                                needs_checkpoint = True
                         
                         # Execute on-chain
-                        tx_hash = self.web3.deploy(blocks_to_play, self.bet_amount_eth)
+                        tx_hash = self.web3.deploy(
+                            block_ids=blocks_to_play, 
+                            total_sol_bet=self.bet_amount_sol, 
+                            round_id=int(self.last_round_id),
+                            needs_checkpoint=needs_checkpoint,
+                            miner_round_id=miner_round_id
+                        )
                         
                         if tx_hash:
-                            self._emit("minebean_ai_log", f"✅ TX: {tx_hash[:16]}...")
-                            self.current_round["userDeployedFormatted"] = str(self.bet_amount_eth)
+                            self._emit("ore_ai_log", f"✅ TX: {tx_hash[:16]}...")
+                            self.current_round["userDeployedFormatted"] = str(self.bet_amount_sol)
+                            self.last_deployed_round_id = self.last_round_id
                         else:
-                            self._emit("minebean_ai_log", f"❌ Deploy gagal, coba ronde berikutnya")
+                            self._emit("ore_ai_log", f"❌ Deploy gagal, coba ronde berikutnya")
 
             # Sleep briefly
             time.sleep(2)
