@@ -1,0 +1,9 @@
+PyQt6>=6.6.0
+PyQt6-WebEngine>=6.6.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+schedule>=1.2.0
+sseclient-py>=1.8.0
+solana>=0.33.0
+solders>=0.21.0
+base58>=2.1.1

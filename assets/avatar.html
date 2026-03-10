@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Airi Live2D Avatar</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        canvas {
+            display: block;
+            background: transparent !important;
+        }
+
+        #speech-bubble {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 30, 50, 0.88);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            border-radius: 14px;
+            padding: 8px 16px;
+            color: #e2e8f0;
+            font-family: 'Segoe UI', 'Noto Sans JP', sans-serif;
+            font-size: 12px;
+            max-width: 260px;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.25);
+        }
+
+        #speech-bubble.visible {
+            opacity: 1;
+        }
+
+        #speech-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -7px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 7px solid transparent;
+            border-right: 7px solid transparent;
+            border-top: 7px solid rgba(30, 30, 50, 0.88);
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #8b5cf6;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 13px;
+            text-align: center;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(139, 92, 246, 0.2);
+            border-top: 3px solid #8b5cf6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 8px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <div>Loading Airi...</div>
+    </div>
+    <div id="speech-bubble"></div>
+
+    <!-- Local JS libraries -->
+    <script src="js/pixi.min.js"></script>
+    <script src="js/live2dcubismcore.min.js"></script>
+    <script src="js/cubism4.min.js"></script>
+
+    <script>
+        const bubble = document.getElementById('speech-bubble');
+        const loadingEl = document.getElementById('loading');
+        const MODEL_PATH = 'live2d/hiyori_free_t08.model3.json';
+
+        let app = null;
+        let model = null;
+
+        async function initLive2D() {
+            try {
+                // Create PixiJS Application with sharp resolution
+                app = new PIXI.Application({
+                    autoStart: true,
+                    backgroundAlpha: 0,
+                    resizeTo: window,
+                    antialias: true,
+                    resolution: window.devicePixelRatio || 1,
+                    autoDensity: true,
+                });
+
+                document.body.insertBefore(app.view, document.body.firstChild);
+
+                // Load the Live2D model
+                model = await PIXI.live2d.Live2DModel.from(MODEL_PATH, {
+                    autoInteract: false,
+                });
+
+                // Scale and position
+                fitModel();
+                app.stage.addChild(model);
+
+                // Try to start idle motion
+                try {
+                    const motionManager = model.internalModel.motionManager;
+                    if (motionManager && motionManager.startRandomMotion) {
+                        motionManager.startRandomMotion('Idle');
+                    }
+                } catch (e) {
+                    console.log('[Airi] No idle motion available');
+                }
+
+                // Mouse tracking
+                document.addEventListener('mousemove', (e) => {
+                    if (!model) return;
+                    model.focus(e.clientX, e.clientY);
+                });
+
+                // Resize handler
+                window.addEventListener('resize', () => {
+                    if (app) {
+                        app.renderer.resize(window.innerWidth, window.innerHeight);
+                        fitModel();
+                    }
+                });
+
+                loadingEl.style.display = 'none';
+                console.log('[Airi] Live2D model loaded!');
+
+            } catch (err) {
+                console.error('[Airi] Load error:', err);
+                loadingEl.innerHTML =
+                    '<div style="font-size:40px;margin-bottom:8px">🎀</div>' +
+                    '<div>Airi</div>' +
+                    '<div style="font-size:10px;color:#64748b;margin-top:4px">Offline mode</div>';
+            }
+        }
+
+        function fitModel() {
+            if (!model || !app) return;
+            const sw = app.screen.width;
+            const sh = app.screen.height;
+            // Scale besar tapi tidak sampai memotong kepala
+            const scale = (sh / model.height) * 2.8;
+            model.scale.set(scale);
+
+            // Tengah horizontal
+            model.x = (sw - model.width) / 2;
+
+            // Atur posisi Y ke atas agar seluruh wajah masuk frame
+            model.y = sh * 0.05;
+        }
+
+        function showSpeech(text, duration) {
+            duration = duration || 5000;
+            bubble.textContent = text;
+            bubble.classList.add('visible');
+            setTimeout(() => bubble.classList.remove('visible'), duration);
+        }
+
+        window.airiAvatar = {
+            showSpeech: showSpeech,
+            setMood: function (mood) { console.log('[Airi] Mood:', mood); }
+        };
+
+        initLive2D();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,47 @@
+{
+  "app_name": "Airi AI Assistant",
+  "version": "1.0.0",
+  "crypto": {
+    "tracked_coins": [
+      "bitcoin",
+      "ethereum",
+      "solana"
+    ],
+    "display_symbols": [
+      "BTC",
+      "ETH",
+      "SOL"
+    ],
+    "currency": "usd",
+    "refresh_interval_seconds": 30
+  },
+  "ai_analysis": {
+    "model": "google/gemini-2.5-flash",
+    "refresh_interval_hours": 1
+  },
+  "window": {
+    "width": 420,
+    "height": 680,
+    "always_on_top": false,
+    "start_minimized": false,
+    "opacity": 0.95
+  },
+  "greeting": {
+    "morning": [
+      "Ohayou, Master! ☀️ Selamat pagi!",
+      "Good morning, Master! Sudah siap untuk hari ini?"
+    ],
+    "afternoon": [
+      "Konnichiwa, Master! 🌤️ Selamat siang!",
+      "Hey Master! Semangat ya siang ini!"
+    ],
+    "evening": [
+      "Konbanwa, Master! 🌅 Selamat sore!",
+      "Master sudah mau istirahat? Sore yang indah!"
+    ],
+    "night": [
+      "Oyasumi, Master! 🌙 Selamat malam!",
+      "Malam Master! Jangan begadang ya~"
+    ]
+  }
+}
