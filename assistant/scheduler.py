@@ -54,7 +54,7 @@ class AiriScheduler:
         self.mining_active = True
         
         # Auto-claim config
-        self.auto_claim_sol_threshold = 0.002  # Claim automatically if pending SOL >= 0.002
+        self.auto_claim_sol_threshold = 0.01  # Claim automatically if pending SOL >= 0.01
 
     def _emit(self, event_type: str, data):
         """Emit an event to the UI callback."""
