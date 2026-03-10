@@ -31,28 +31,28 @@ def calculate_ev(price_data: dict, current_round: dict, total_bet_sol: float) ->
         print(f"[Strategy] EV calculation error: {e}")
         return -1.0
 
-def select_best_blocks(current_round: dict, num_blocks: int = 10) -> list[int]:
+def select_random_blocks(num_blocks: int = 20, exclude_block: int = -1) -> list[int]:
     """
-    Select the least crowded squares for maximum profit share.
+    Select blocks purely at random, explicitly excluding a specific block (usually the last winner).
     
     All 25 squares have equal 1/25 win probability (Entropy VRF uniform random).
-    Picking 15 squares = 15/25 = 60% chance one of ours is the winner.
-    
-    Strategy: Choose the squares with the LEAST total SOL deployed by others.
-    If our square wins and we're the only/biggest miner on it, our proportional 
-    payout is maximized.
-    
     Ore uses 0-based square IDs (0-24) which map to a u32 bitmask.
     """
-    blocks = current_round.get("blocks", [])
-    if not blocks:
-        # If no grid data, pick random squares (0-24)
-        import random
-        return random.sample(range(25), min(num_blocks, 25))
+    import random
     
-    # Sort blocks by total deployed SOL (ascending = least crowded first)
-    sorted_blocks = sorted(blocks, key=lambda b: float(b.get("deployed", "0")))
+    # Create the pool of available blocks (0 to 24)
+    available_blocks = list(range(25))
     
-    # Take the least crowded N blocks (ensure int IDs)
-    selected_ids = [int(b["id"]) for b in sorted_blocks[:num_blocks]]
+    # Attempt to remove the excluded block if it exists in the valid range
+    if 0 <= exclude_block <= 24:
+        try:
+            available_blocks.remove(exclude_block)
+        except ValueError:
+            pass
+            
+    # If the user asks for more blocks than available, limit it
+    num_to_select = min(num_blocks, len(available_blocks))
+    
+    # Randomly select the desired number of blocks from the reduced pool
+    selected_ids = random.sample(available_blocks, num_to_select)
     return selected_ids

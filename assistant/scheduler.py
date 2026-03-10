@@ -10,7 +10,7 @@ from datetime import datetime
 
 from assistant.ore_api import OreAPI
 from assistant.ore_solana import OreSolana
-from assistant.strategy import calculate_ev, select_best_blocks
+from assistant.strategy import calculate_ev, select_random_blocks
 from assistant.greeting import get_greeting
 
 
@@ -44,6 +44,7 @@ class AiriScheduler:
         self.bet_amount_sol = self.bet_per_block * self.num_blocks_to_play
         
         # Win/Loss & P&L tracking
+        self.last_winning_block = -1
         self.rounds_played = 0
         self.rounds_won = 0
         self.total_sol_spent = 0.0
@@ -82,6 +83,12 @@ class AiriScheduler:
                 # Visually display +1 so user sees 1-25 instead of 0-24
                 winning_block_id = settled.get("winningBlock", "?")
                 winning_block = str(int(winning_block_id) + 1) if winning_block_id != "?" else "?"
+                
+                # Save the last winning block id for exclusion in the next round
+                if winning_block_id != "?":
+                    self.last_winning_block = int(winning_block_id)
+                else:
+                    self.last_winning_block = -1
                 
                 total_winnings = settled.get("totalWinnings", "0")
                 top_miner = settled.get("topMiner", "")
@@ -231,8 +238,8 @@ class AiriScheduler:
                     
                     # Deploy when 20-30 seconds remaining (late deploy strategy)
                     if 20 <= time_remaining <= 30:
-                        # Pick least crowded squares
-                        blocks_to_play = select_best_blocks(self.current_round, self.num_blocks_to_play)
+                        # Pick random squares, excluding previous winner
+                        blocks_to_play = select_random_blocks(self.num_blocks_to_play, self.last_winning_block)
                         
                         self._emit("ore_ai_log", f"🚀 Deploying {self.bet_amount_sol} SOL → squares {blocks_to_play}")
                         
